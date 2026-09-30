@@ -4,4 +4,4 @@ Une fiche par bloc fonctionnel. Lire la fiche d'un bloc avant de le modifier ; l
 
 | Fiche | Rôle | Dernière mise à jour |
 |---|---|---|
-| _(aucune encore — premier ticket conseillé : « Documenter l'existant dans docs/history »)_ | | |
+| [events.md](events.md) | Façade `Analytics`, validation locale (règles serveur + PII), queue disque | 2026-09-30 (#1) |
