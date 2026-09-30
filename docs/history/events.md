@@ -1,5 +1,5 @@
 # Événements : façade, validation, queue
-Dernière mise à jour : 2026-09-30 (ticket #1)
+Dernière mise à jour : 2026-09-30 (ticket #3)
 
 ## Rôle
 Point d'entrée du SDK pour l'app hôte (`Analytics.configure/track/screen/flush`) : chaque appel est
@@ -27,6 +27,7 @@ validé selon les règles du serveur puis écrit dans une queue disque, sans jam
   `Task { await core… }` par appel ne garantirait pas l'ordre FIFO exigé par C05 §5.
 - 2026-09-30 #1 — L'horodatage `occurred_at` est pris dans la façade au moment de l'appel, pas au
   traitement dans l'actor.
+- 2026-09-30 #3 — `ack(_ peek:)` par position absolue remplace `ack(lignes)` (#1) : sûr quand la tête bouge pendant un envoi.
 - 2026-09-30 #1 — `head` séparé (`queue.head` = nombre de lignes mortes en tête) plutôt que réécrire le
   fichier à chaque envoi : `queue.jsonl` reste append-only, compaction seulement au-delà de 50 % de lignes mortes.
 - 2026-09-30 #1 — Type public `Analytics.LogLevel` (`off/error/warning/info/debug`) : C05 §1 utilise
@@ -50,3 +51,4 @@ validé selon les règles du serveur puis écrit dans une queue disque, sans jam
 
 ## Tickets
 - #1 — Package, façade, validation, queue — 2026-09-30
+- #3 — acquittement par position absolue (`Peek.end`), pré-filtres PII — 2026-09-30
