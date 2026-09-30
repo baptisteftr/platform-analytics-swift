@@ -1,7 +1,49 @@
 import Foundation
 
-/// Corps de `POST /v1/ingest/events` (C02 §3.1).
-struct Batch {
+/// Un envoi : corps JSON de `POST /v1/ingest/events` (C02 §3.1) **figé** à la création, et sa clé
+/// d'idempotence. Un retry renvoie exactement les mêmes octets avec la même clé (sinon `409`, C02 §1.4).
+struct Batch: Sendable {
+    static let maxEvents = 500
+    static let maxBodyBytes = 1_000_000
+    static let sdk = SDK(name: "swift", version: Analytics.sdkVersion)
+
+    let idempotencyKey: String
+    let body: Data
+    /// Portion de la queue couverte, à acquitter après l'envoi.
+    let peek: EventQueue.Peek
+
+    var eventCount: Int { peek.events.count }
+
+    /// `nil` si l'encodage échoue ou si le corps dépasse 1 Mo avec plus d'un événement (l'appelant
+    /// recommence avec un peek plus petit).
+    init?(peek: EventQueue.Peek, device: Device, sentAt: Date) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        let payload = Payload(sdk: Self.sdk, sentAt: QueuedEvent.timestamp(sentAt), device: device, events: peek.events)
+        guard let body = try? encoder.encode(payload), body.count <= Self.maxBodyBytes || peek.events.count <= 1
+        else { return nil }
+        self.peek = peek
+        self.body = body
+        self.idempotencyKey = UUID().uuidString
+    }
+
+    struct SDK: Codable, Equatable, Sendable {
+        var name: String
+        var version: String
+    }
+
+    struct Payload: Codable, Equatable {
+        var sdk: SDK
+        var sentAt: String
+        var device: Device
+        var events: [QueuedEvent]
+
+        enum CodingKeys: String, CodingKey {
+            case sdk, device, events
+            case sentAt = "sent_at"
+        }
+    }
+
     /// Bloc `device` : identifiant anonyme et caractéristiques non identifiantes de l'appareil.
     struct Device: Codable, Equatable, Sendable {
         var id: String
