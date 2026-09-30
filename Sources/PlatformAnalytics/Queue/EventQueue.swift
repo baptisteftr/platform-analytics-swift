@@ -40,10 +40,18 @@ final class EventQueue {
     /// Nombre d'événements en attente.
     var count: Int { lineCount - deadCount }
 
-    /// `Library/Application Support/com.platform.analytics/`.
-    static func defaultDirectory() -> URL? {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appending(path: folderName, directoryHint: .isDirectory)
+    /// `Library/Application Support/com.platform.analytics/` ; sur macOS
+    /// `Application Support/<bundle id>/com.platform.analytics/`, ce dossier étant partagé entre les apps
+    /// non sandboxées (C05 §2.5).
+    static func defaultDirectory(bundle: Bundle = .main) -> URL? {
+        guard var url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        else { return nil }
+        #if os(macOS)
+            // Sans bundle id (outil en ligne de commande), le nom du process en tient lieu.
+            url.append(
+                path: bundle.bundleIdentifier ?? ProcessInfo.processInfo.processName, directoryHint: .isDirectory)
+        #endif
+        return url.appending(path: folderName, directoryHint: .isDirectory)
     }
 
     init(directory: URL, maxEvents: Int) {

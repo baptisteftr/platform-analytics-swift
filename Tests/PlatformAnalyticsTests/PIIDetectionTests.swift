@@ -33,7 +33,7 @@ final class PIIDetectionTests: XCTestCase {
         XCTAssertTrue(Validator.containsPII("addr fe80::1%en0"))
         XCTAssertTrue(Validator.containsPII("::ffff:10.0.0.1"))
         XCTAssertFalse(Validator.containsPII("12:30:45"))
-        XCTAssertFalse(Validator.containsPII("::"))
+        XCTAssertTrue(Validator.containsPII("::"), "C02 v1.7 : la suite « :: » est une IPv6 valide")
         XCTAssertFalse(Validator.containsPII("a:b"))
     }
 

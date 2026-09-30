@@ -2,7 +2,7 @@ import Foundation
 
 extension Analytics {
     /// Réglages du SDK, tous avec une valeur par défaut. Les valeurs hors bornes sont ramenées dans les bornes.
-    public struct Options: Sendable, Equatable {
+    public struct Options: Sendable {
         /// Intervalle entre deux flush automatiques, en secondes (défaut 30, minimum 1).
         public var flushInterval: TimeInterval
         /// Nombre d'événements en attente qui déclenche un flush (défaut 30, minimum 1).

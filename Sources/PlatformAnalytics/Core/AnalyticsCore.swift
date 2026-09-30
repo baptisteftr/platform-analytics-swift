@@ -306,7 +306,7 @@ actor AnalyticsCore {
     /// Envoie des batches séquentiels (les plus anciens d'abord) tant qu'il y a des événements et que
     /// rien ne l'interdit.
     private func drain() async {
-        while canSend, let transport, let batch = inFlight ?? makeBatch() {
+        while canSend, let transport, let batch = inFlight?.retried(at: environment.now()) ?? makeBatch() {
             inFlight = batch
             let sentGeneration = generation
             let result = await transport.send(batch)

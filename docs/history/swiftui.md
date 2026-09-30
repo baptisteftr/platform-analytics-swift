@@ -1,5 +1,5 @@
 # Intégration SwiftUI et distribution
-Dernière mise à jour : 2026-09-30 (ticket #4)
+Dernière mise à jour : 2026-09-30 (ticket #5)
 
 ## Rôle
 Le modificateur `.analyticsScreen(_:)` permet au développeur de mesurer un écran en une ligne ; le README,
@@ -22,7 +22,7 @@ le `CHANGELOG`, le `MIGRATING` et la CI font du package une dépendance publique
 - 2026-09-30 #4 — Release = tag + `gh release create --generate-notes` dans la CI, sur tag uniquement.
 
 ## Points techniques
-- Taille : 1 696 lignes de Swift ; objet Release arm64 iOS ≈ 279 Ko (segments TEXT + DATA, sans
+- Taille : 1 726 lignes de Swift après #5 (1 696 en #4) ; objet Release arm64 iOS ≈ 279 Ko (segments TEXT + DATA, sans
   instrumentation de couverture ; avec la couverture activée par le scheme généré, ≈ 341 Ko).
 - `PrivacyInfo.xcprivacy` copié dans `PlatformAnalytics_PlatformAnalytics.bundle` (vérifié sur le build
   iOS). Pas de `NSPrivacyAccessedAPICategoryFileTimestamp` : le SDK ne lit aucune date de fichier.
@@ -32,3 +32,4 @@ le `CHANGELOG`, le `MIGRATING` et la CI font du package une dépendance publique
 
 ## Tickets
 - #4 — SwiftUI, doc, release 1.0 — 2026-09-30
+- #5 — tag `1.0.0` local reposé après la mise en conformité C05 v1.2 — 2026-09-30

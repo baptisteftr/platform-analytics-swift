@@ -16,7 +16,7 @@ enum Log {
     static func debug(_ message: @autoclosure () -> String) { emit(.debug, message) }
 
     private static func emit(_ messageLevel: Analytics.LogLevel, _ message: () -> String) {
-        guard messageLevel != .off, messageLevel <= currentLevel else { return }
+        guard messageLevel != .off, messageLevel.rank <= currentLevel.rank else { return }
         let text = message()
         switch messageLevel {
         case .error: logger.error("\(text, privacy: .public)")

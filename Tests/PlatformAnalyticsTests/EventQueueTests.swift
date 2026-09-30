@@ -136,6 +136,13 @@ final class EventQueueTests: XCTestCase {
     func testDefaultDirectoryIsApplicationSupport() throws {
         let url = try XCTUnwrap(EventQueue.defaultDirectory())
         XCTAssertEqual(url.lastPathComponent, "com.platform.analytics")
-        XCTAssertEqual(url.deletingLastPathComponent().lastPathComponent, "Application Support")
+        #if os(macOS)
+            // Application Support/<bundle id>/com.platform.analytics : dossier partagé entre apps sur macOS.
+            let owner = url.deletingLastPathComponent()
+            XCTAssertEqual(owner.lastPathComponent, Bundle.main.bundleIdentifier ?? ProcessInfo.processInfo.processName)
+            XCTAssertEqual(owner.deletingLastPathComponent().lastPathComponent, "Application Support")
+        #else
+            XCTAssertEqual(url.deletingLastPathComponent().lastPathComponent, "Application Support")
+        #endif
     }
 }

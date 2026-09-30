@@ -80,7 +80,7 @@ final class CoreFlushTests: XCTestCase {
         XCTAssertEqual(batches.map(\.eventCount).reduce(0, +), 401)
     }
 
-    func testRetryableFailureKeepsTheSameBatchAndKeyUntil202() async throws {
+    func testRetryKeepsKeyAndEventsAndRefreshesSentAt() async throws {
         let transport = MockTransport([.retryable(reason: "HTTP 503")])
         let core = await makeCore(transport)
         await track(core, 2)
@@ -102,7 +102,11 @@ final class CoreFlushTests: XCTestCase {
         batches = await transport.batches
         XCTAssertEqual(batches.count, 3, "retry du même batch, puis le nouvel événement")
         XCTAssertEqual(batches[1].idempotencyKey, batches[0].idempotencyKey)
-        XCTAssertEqual(batches[1].body, batches[0].body, "corps identique : pas de 409 côté serveur")
+        let payloads = await transport.payloads
+        XCTAssertEqual(payloads[1].events, payloads[0].events, "mêmes événements d'une tentative à l'autre")
+        XCTAssertEqual(payloads[1].device, payloads[0].device)
+        XCTAssertEqual(payloads[0].sentAt, "2026-09-21T14:13:20.000Z")
+        XCTAssertEqual(payloads[1].sentAt, "2026-09-21T14:13:26.000Z", "sent_at rafraîchi à chaque tentative")
         XCTAssertNotEqual(batches[2].idempotencyKey, batches[0].idempotencyKey)
         let queued = await core.queuedCount
         XCTAssertEqual(queued, 0)
