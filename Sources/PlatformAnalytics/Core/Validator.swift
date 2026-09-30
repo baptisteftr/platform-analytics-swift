@@ -43,7 +43,7 @@ enum Validator {
             switch value {
             case .string(let string):
                 if containsPII(string) {
-                    Log.warning("possible PII: prop '\(key)' of '\(name)' dropped")
+                    Log.warning("possible PII: prop '\(key)' dropped")
                     continue
                 }
                 result[key] = .string(String(string.prefix(maxStringLength)))
@@ -75,22 +75,26 @@ enum Validator {
 
     // MARK: - PII
 
-    /// Expressions compilées une seule fois, chacune précédée d'un caractère déclencheur (pré-filtre bon
-    /// marché). Recherche (pas correspondance exacte) : une valeur qui *contient* un email, un numéro
-    /// E.164, une IPv4 ou une IPv6 est droppée. Les lookbehind évitent un coût quadratique.
+    /// Règles exactes de C02 §3.1, identiques au backend (table de référence : docs/history/events.md).
+    /// Recherche (pas correspondance complète) : une valeur qui *contient* un motif est droppée. Chaque
+    /// expression, compilée une fois, a un caractère déclencheur (pré-filtre bon marché). Les lookbehind
+    /// traduisent les bornes « non précédé de » du contrat ; pour l'email, la borne ne change pas le
+    /// résultat (une correspondance en milieu de partie locale s'étend à son début) mais évite un coût
+    /// quadratique.
     private static let piiPatterns: [(trigger: UInt8, regex: NSRegularExpression)] = [
         // email
         (UInt8(ascii: "@"), #"(?<![A-Za-z0-9._%+\-])[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"#),
-        // E.164 : « + » puis 7 à 15 chiffres, séparateurs usuels tolérés (espace, point, tiret)
+        // E.164 : « + », un chiffre 1-9, 6 à 14 chiffres précédés chacun d'un espace/point/tiret facultatif, pas de chiffre après
         (UInt8(ascii: "+"), #"\+[1-9](?:[ .\-]?[0-9]){6,14}(?![0-9])"#),
-        // IPv4
+        // IPv4 : octets 0-255 sans zéro non significatif, ni précédés de chiffre/point, ni suivis de chiffre/« .chiffre »
         (
             UInt8(ascii: "."),
             #"(?<![0-9.])(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?![0-9]|\.[0-9])"#
         ),
     ].compactMap { trigger, pattern in (try? NSRegularExpression(pattern: pattern)).map { (trigger, $0) } }
 
-    /// Candidats IPv6 (au moins deux « : »), confirmés ensuite par `inet_pton`.
+    /// Suites maximales de `[0-9A-Fa-f:.]` contenant au moins deux « : » (le lookbehind impose le début de la
+    /// suite, les `*` gourmands sa fin), confirmées ensuite par `inet_pton`.
     private static let ipv6Candidate = try? NSRegularExpression(
         pattern: #"(?<![0-9A-Fa-f:.])[0-9A-Fa-f:.]*:[0-9A-Fa-f.]*:[0-9A-Fa-f:.]*"#)
 
@@ -107,11 +111,10 @@ enum Validator {
         }
     }
 
-    private static func isIPv6(_ candidate: String) -> Bool {
-        let token = candidate.trimmingCharacters(in: CharacterSet(charactersIn: "."))
-        guard token.contains(where: \.isHexDigit) else { return false }
+    /// La suite maximale entière doit être une IPv6 valide : pas de nettoyage (un « . » final l'invalide).
+    private static func isIPv6(_ run: String) -> Bool {
         var address = in6_addr()
-        return token.withCString { inet_pton(AF_INET6, $0, &address) } == 1
+        return run.withCString { inet_pton(AF_INET6, $0, &address) } == 1
     }
 
     private static func isIdentifier(_ text: Substring, maxLength: Int) -> Bool {
