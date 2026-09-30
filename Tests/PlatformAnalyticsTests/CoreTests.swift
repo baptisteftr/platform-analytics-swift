@@ -62,6 +62,9 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(options.flushInterval, 1)
         XCTAssertEqual(options.flushThreshold, 1)
         XCTAssertEqual(options.maxQueuedEvents, 1)
-        XCTAssertEqual(Analytics.Options().sanitized, Analytics.Options())
+        let defaults = Analytics.Options().sanitized
+        XCTAssertEqual(defaults.flushInterval, 30)
+        XCTAssertEqual(defaults.flushThreshold, 30)
+        XCTAssertEqual(defaults.maxQueuedEvents, 5_000)
     }
 }
