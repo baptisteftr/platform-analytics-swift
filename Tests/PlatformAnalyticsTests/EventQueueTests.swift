@@ -34,7 +34,7 @@ final class EventQueueTests: XCTestCase {
         XCTAssertEqual(peek.events.map(\.name), ["event_0", "event_1", "event_2"])
         XCTAssertEqual(peek.lineCount, 3)
         XCTAssertEqual(queue.count, 5, "peek ne retire rien")
-        queue.ack(peek.lineCount)
+        queue.ack(peek)
         XCTAssertEqual(queue.count, 2)
         XCTAssertEqual(queue.peek(10).events.map(\.name), ["event_3", "event_4"])
     }
@@ -54,7 +54,7 @@ final class EventQueueTests: XCTestCase {
         do {
             let queue = EventQueue(directory: directory, maxEvents: 100)
             for index in 0..<6 { queue.append(event(index)) }
-            queue.ack(2)
+            queue.ack(queue.peek(2))
         }
         let reopened = EventQueue(directory: directory, maxEvents: 100)
         XCTAssertEqual(reopened.count, 4)
@@ -64,9 +64,9 @@ final class EventQueueTests: XCTestCase {
     func testCompactsWhenMoreThanHalfTheLinesAreDead() throws {
         let queue = EventQueue(directory: directory, maxEvents: 100)
         for index in 0..<10 { queue.append(event(index)) }
-        queue.ack(5)
+        queue.ack(queue.peek(5))
         XCTAssertEqual(try lines().count, 10, "50 % pile : pas encore de compaction")
-        queue.ack(1)
+        queue.ack(queue.peek(1))
         XCTAssertEqual(try lines().count, 4, "compacté : seules les lignes vivantes restent")
         XCTAssertEqual(queue.count, 4)
         XCTAssertEqual(queue.peek(10).events.map(\.name), ["event_6", "event_7", "event_8", "event_9"])
@@ -95,10 +95,26 @@ final class EventQueueTests: XCTestCase {
         let peek = reopened.peek(10)
         XCTAssertEqual(peek.events.map(\.name), ["event_0"])
         XCTAssertEqual(peek.lineCount, 2)
-        reopened.ack(peek.lineCount)
+        reopened.ack(peek)
         XCTAssertEqual(reopened.count, 0)
         reopened.append(event(1))
         XCTAssertEqual(reopened.peek(10).events.map(\.name), ["event_1"])
+    }
+
+    func testAckIsSafeWhenTheHeadMovedDuringASend() {
+        let queue = EventQueue(directory: directory, maxEvents: 4)
+        for index in 0..<4 { queue.append(event(index)) }
+        let inFlight = queue.peek(2)  // event_0, event_1
+        queue.append(event(4))  // plafond : event_0 droppé
+        queue.append(event(5))  // plafond : event_1 droppé (compaction)
+        queue.ack(inFlight)
+        XCTAssertEqual(queue.peek(10).events.map(\.name), ["event_2", "event_3", "event_4", "event_5"])
+
+        let beforePurge = queue.peek(2)
+        queue.purge()
+        queue.append(event(6))
+        queue.ack(beforePurge)
+        XCTAssertEqual(queue.peek(10).events.map(\.name), ["event_6"], "un ack antérieur à la purge est sans effet")
     }
 
     func testPurgeEmptiesEverything() {

@@ -44,4 +44,15 @@ final class PIIDetectionTests: XCTestCase {
             XCTAssertFalse(Validator.containsPII(value), value)
         }
     }
+
+    /// Pas de coût quadratique sur les longues chaînes (valeurs ≤ 256 car. mais vérifiées avant troncature).
+    func testLongValuesStayCheap() {
+        let values = [
+            String(repeating: "a", count: 4_000) + "@", String(repeating: "1", count: 4_000) + ":",
+            String(repeating: "a1:", count: 1_300), String(repeating: "+1", count: 2_000),
+        ]
+        let start = Date()
+        for _ in 0..<50 { for value in values { _ = Validator.containsPII(value) } }
+        XCTAssertLessThan(Date().timeIntervalSince(start), 2)
+    }
 }

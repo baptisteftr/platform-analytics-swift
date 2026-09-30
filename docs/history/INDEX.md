@@ -6,3 +6,4 @@ Une fiche par bloc fonctionnel. Lire la fiche d'un bloc avant de le modifier ; l
 |---|---|---|
 | [events.md](events.md) | Façade `Analytics`, validation locale (règles serveur + PII), queue disque | 2026-09-30 (#1) |
 | [sessions.md](sessions.md) | `device_id` Keychain, sessions `$session_*`, marqueur `session.active` → `$crash`, cycle de vie | 2026-09-30 (#2) |
+| [transport.md](transport.md) | Flush, batches ≤ 500 / 1 Mo, table des réponses, backoff, idempotence, opt-out | 2026-09-30 (#3) |

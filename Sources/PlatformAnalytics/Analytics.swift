@@ -6,6 +6,9 @@ import os
 public enum Analytics {
     /// Endpoint compilé utilisé quand `configure` n'en reçoit pas.
     static let defaultEndpoint = URL(string: "https://api.baptcave.example/v1")
+    /// Version du SDK envoyée dans chaque batch (`sdk.version`).
+    static let sdkVersion = "1.0.0"
+    static let optOutKey = "com.platform.analytics.optOut"
 
     /// À appeler une fois, au lancement (`App.init`). Un second appel est ignoré (log `warning`).
     /// No-op silencieux dans une extension (`.appex`) : pas d'analytics hors de l'app en 1.x.
@@ -23,8 +26,9 @@ public enum Analytics {
         }
         let sanitized = options.sanitized
         Log.currentLevel = sanitized.logLevel
-        runtime.send(.configure(ingestKey: key, endpoint: url, options: sanitized, at: Date()))
-        runtime.startObservingLifecycle()
+        runtime.send(
+            .configure(ingestKey: key, endpoint: url, options: sanitized, optedOut: optOut, at: Date()))
+        runtime.startObserving()
     }
 
     /// Événement custom. `name` : `^[a-z0-9_]{1,64}$` ; props validées (C05 §2.4) avant mise en queue.
@@ -39,7 +43,17 @@ public enum Analytics {
 
     /// Force un envoi (asynchrone, non bloquant).
     public static func flush() {
-        runtime.send(.flush)
+        runtime.send(.flush(completion: nil))
+    }
+
+    /// `true` : plus aucun événement, plus de session ni de réseau, queue purgée. Persisté
+    /// (`UserDefaults`, `com.platform.analytics.optOut`). `false` : reprise avec une nouvelle session.
+    public static var optOut: Bool {
+        get { UserDefaults.standard.bool(forKey: optOutKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: optOutKey)
+            runtime.send(.setOptOut(newValue, at: Date()))
+        }
     }
 
     /// Nouveau `device_id` anonyme (« oublie-moi » côté client) : les événements pas encore envoyés
@@ -69,7 +83,7 @@ public enum Analytics {
         let identity: DeviceIdentity
         private let continuation: AsyncStream<AnalyticsCore.Command>.Continuation
         private let configured = OSAllocatedUnfairLock(initialState: false)
-        private let lifecycle = OSAllocatedUnfairLock<LifecycleObserver?>(initialState: nil)
+        private let observers = OSAllocatedUnfairLock<(LifecycleObserver, Reachability)?>(initialState: nil)
 
         init(environment: AnalyticsCore.Environment) {
             let (stream, continuation) = AsyncStream.makeStream(of: AnalyticsCore.Command.self)
@@ -99,12 +113,22 @@ public enum Analytics {
         }
 
         /// Les notifications passent par la même file que les appels publics : l'ordre est conservé.
-        func startObservingLifecycle() {
-            lifecycle.withLock { observer in
-                guard observer == nil else { return }
-                observer = LifecycleObserver { [weak self] event in
-                    self?.send(.lifecycle(event, at: Date()))
+        /// En arrière-plan, une tâche de fond couvre l'envoi de `$session_end`.
+        func startObserving() {
+            observers.withLock { observers in
+                guard observers == nil else { return }
+                let lifecycle = LifecycleObserver { [weak self] event in
+                    guard let self else { return }
+                    guard event == .didEnterBackground else {
+                        self.send(.lifecycle(event, at: Date()))
+                        return
+                    }
+                    let task = LifecycleObserver.BackgroundTask.begin()
+                    self.send(.lifecycle(event, at: Date()))
+                    self.send(.flush(completion: { task.end() }))
                 }
+                let reachability = Reachability { [weak self] in self?.send(.networkRestored) }
+                observers = (lifecycle, reachability)
             }
         }
     }
