@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["*"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint (swift-format)
+        run: swift format lint --strict --recursive Package.swift Sources Tests
+      - name: Build (macOS, zéro warning)
+        run: swift build -Xswiftc -warnings-as-errors
+      - name: Tests (macOS)
+        run: swift test
+      - name: Taille (< 2 000 lignes)
+        run: |
+          lines=$(find Sources -name '*.swift' -print0 | xargs -0 cat | wc -l)
+          echo "Sources: $lines lignes"
+          test "$lines" -lt 2000
+
+  build-platforms:
+    runs-on: macos-15
+    strategy:
+      matrix:
+        destination: ["generic/platform=iOS", "generic/platform=visionOS"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Installer le SDK visionOS si absent
+        if: contains(matrix.destination, 'visionOS')
+        run: xcodebuild -showsdks | grep -q xros || xcodebuild -downloadPlatform visionOS
+      - name: Build ${{ matrix.destination }}
+        run: >
+          xcodebuild -scheme PlatformAnalytics -destination '${{ matrix.destination }}' build
+          SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [test, build-platforms]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release avec notes générées
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
