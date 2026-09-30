@@ -8,7 +8,9 @@ public enum Analytics {
     static let defaultEndpoint = URL(string: "https://api.baptcave.example/v1")
 
     /// À appeler une fois, au lancement (`App.init`). Un second appel est ignoré (log `warning`).
+    /// No-op silencieux dans une extension (`.appex`) : pas d'analytics hors de l'app en 1.x.
     public static func configure(ingestKey: String, endpoint: URL? = nil, options: Options = .init()) {
+        guard !isAppExtension(bundlePath: Bundle.main.bundlePath) else { return }
         let key = ingestKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else {
             Log.error("configure: empty ingest key, SDK disabled")
@@ -21,7 +23,8 @@ public enum Analytics {
         }
         let sanitized = options.sanitized
         Log.currentLevel = sanitized.logLevel
-        runtime.send(.configure(ingestKey: key, endpoint: url, options: sanitized))
+        runtime.send(.configure(ingestKey: key, endpoint: url, options: sanitized, at: Date()))
+        runtime.startObservingLifecycle()
     }
 
     /// Événement custom. `name` : `^[a-z0-9_]{1,64}$` ; props validées (C05 §2.4) avant mise en queue.
@@ -39,22 +42,40 @@ public enum Analytics {
         runtime.send(.flush)
     }
 
+    /// Nouveau `device_id` anonyme (« oublie-moi » côté client) : les événements pas encore envoyés
+    /// sont purgés et une nouvelle session commence.
+    public static func resetDeviceID() {
+        runtime.identity.rotate()
+        runtime.send(.resetDeviceID(at: Date()))
+    }
+
+    /// Identifiant anonyme de l'appareil, à afficher dans un écran « Confidentialité » si besoin.
+    public static var deviceID: String { runtime.identity.current }
+
     /// `true` après un `configure` accepté.
     public static var isConfigured: Bool { runtime.isConfigured }
 
+    static func isAppExtension(bundlePath: String) -> Bool {
+        bundlePath.hasSuffix(".appex") || bundlePath.hasSuffix(".appex/")
+    }
+
     // MARK: - Exécution
 
-    static let runtime = Runtime(core: AnalyticsCore())
+    static let runtime = Runtime(environment: .live)
 
     /// Relie la façade à l'actor : une file de commandes ordonnée, consommée par une seule tâche.
     final class Runtime: Sendable {
         let core: AnalyticsCore
+        let identity: DeviceIdentity
         private let continuation: AsyncStream<AnalyticsCore.Command>.Continuation
         private let configured = OSAllocatedUnfairLock(initialState: false)
+        private let lifecycle = OSAllocatedUnfairLock<LifecycleObserver?>(initialState: nil)
 
-        init(core: AnalyticsCore) {
+        init(environment: AnalyticsCore.Environment) {
             let (stream, continuation) = AsyncStream.makeStream(of: AnalyticsCore.Command.self)
+            let core = AnalyticsCore(environment: environment)
             self.core = core
+            self.identity = environment.identity
             self.continuation = continuation
             Task.detached(priority: .utility) {
                 for await command in stream {
@@ -75,6 +96,16 @@ public enum Analytics {
 
         func send(_ command: AnalyticsCore.Command) {
             continuation.yield(command)
+        }
+
+        /// Les notifications passent par la même file que les appels publics : l'ordre est conservé.
+        func startObservingLifecycle() {
+            lifecycle.withLock { observer in
+                guard observer == nil else { return }
+                observer = LifecycleObserver { [weak self] event in
+                    self?.send(.lifecycle(event, at: Date()))
+                }
+            }
         }
     }
 }
