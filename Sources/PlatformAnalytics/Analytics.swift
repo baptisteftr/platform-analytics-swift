@@ -1,0 +1,80 @@
+import Foundation
+import os
+
+/// Façade publique du SDK. Tous les appels sont synchrones, non bloquants et ne lèvent jamais :
+/// ils transmettent une commande, dans l'ordre d'appel, à l'actor interne qui fait le travail.
+public enum Analytics {
+    /// Endpoint compilé utilisé quand `configure` n'en reçoit pas.
+    static let defaultEndpoint = URL(string: "https://api.baptcave.example/v1")
+
+    /// À appeler une fois, au lancement (`App.init`). Un second appel est ignoré (log `warning`).
+    public static func configure(ingestKey: String, endpoint: URL? = nil, options: Options = .init()) {
+        let key = ingestKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            Log.error("configure: empty ingest key, SDK disabled")
+            return
+        }
+        guard let url = endpoint ?? defaultEndpoint else { return }
+        guard runtime.markConfigured() else {
+            Log.warning("configure called more than once, ignored")
+            return
+        }
+        let sanitized = options.sanitized
+        Log.currentLevel = sanitized.logLevel
+        runtime.send(.configure(ingestKey: key, endpoint: url, options: sanitized))
+    }
+
+    /// Événement custom. `name` : `^[a-z0-9_]{1,64}$` ; props validées (C05 §2.4) avant mise en queue.
+    public static func track(_ name: String, props: [String: PropValue] = [:]) {
+        runtime.send(.track(name: name, props: props, at: Date()))
+    }
+
+    /// Écran affiché (événement `$screen`), pour les cas sans vue ; sinon `.analyticsScreen(_:)`.
+    public static func screen(_ name: String, props: [String: PropValue] = [:]) {
+        runtime.send(.screen(name: name, props: props, at: Date()))
+    }
+
+    /// Force un envoi (asynchrone, non bloquant).
+    public static func flush() {
+        runtime.send(.flush)
+    }
+
+    /// `true` après un `configure` accepté.
+    public static var isConfigured: Bool { runtime.isConfigured }
+
+    // MARK: - Exécution
+
+    static let runtime = Runtime(core: AnalyticsCore())
+
+    /// Relie la façade à l'actor : une file de commandes ordonnée, consommée par une seule tâche.
+    final class Runtime: Sendable {
+        let core: AnalyticsCore
+        private let continuation: AsyncStream<AnalyticsCore.Command>.Continuation
+        private let configured = OSAllocatedUnfairLock(initialState: false)
+
+        init(core: AnalyticsCore) {
+            let (stream, continuation) = AsyncStream.makeStream(of: AnalyticsCore.Command.self)
+            self.core = core
+            self.continuation = continuation
+            Task.detached(priority: .utility) {
+                for await command in stream {
+                    await core.handle(command)
+                }
+            }
+        }
+
+        var isConfigured: Bool { configured.withLock { $0 } }
+
+        /// Passe à « configuré » ; `false` si c'était déjà le cas.
+        func markConfigured() -> Bool {
+            configured.withLock { alreadyConfigured in
+                defer { alreadyConfigured = true }
+                return !alreadyConfigured
+            }
+        }
+
+        func send(_ command: AnalyticsCore.Command) {
+            continuation.yield(command)
+        }
+    }
+}
