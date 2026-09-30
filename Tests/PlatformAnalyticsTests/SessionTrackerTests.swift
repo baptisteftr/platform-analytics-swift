@@ -100,10 +100,7 @@ final class SessionTrackerTests: XCTestCase {
     func testResetDeviceIDPurgesQueueAndStartsFirstSession() async throws {
         let store = MemoryStore()
         let identity = DeviceIdentity(store: store)
-        let core = AnalyticsCore(
-            environment: .init(
-                queueDirectory: { [directory] in directory }, now: { Date() }, identity: identity,
-                device: { .fixture() }))
+        let core = AnalyticsCore.make(directory: directory, store: store, identity: identity)
         await core.configureForTests(at: t0)
         await core.handle(.track(name: "before_reset", props: [:], at: t0 + 1))
         let oldID = identity.current
@@ -124,10 +121,7 @@ final class SessionTrackerTests: XCTestCase {
 
     func testResetInBackgroundMakesNextSessionFirst() async {
         let identity = DeviceIdentity(store: MemoryStore())
-        let core = AnalyticsCore(
-            environment: .init(
-                queueDirectory: { [directory] in directory }, now: { Date() }, identity: identity,
-                device: { .fixture() }))
+        let core = AnalyticsCore.make(directory: directory, identity: identity)
         await core.configureForTests(at: t0)
         await core.handle(.lifecycle(.didEnterBackground, at: t0 + 1))
         identity.rotate()
