@@ -75,27 +75,32 @@ enum Validator {
 
     // MARK: - PII
 
-    /// Expressions compilées une seule fois. Recherche (pas correspondance exacte) : une valeur qui
-    /// *contient* un email, un numéro E.164, une IPv4 ou une IPv6 est droppée.
-    private static let piiPatterns: [NSRegularExpression] = [
+    /// Expressions compilées une seule fois, chacune précédée d'un caractère déclencheur (pré-filtre bon
+    /// marché). Recherche (pas correspondance exacte) : une valeur qui *contient* un email, un numéro
+    /// E.164, une IPv4 ou une IPv6 est droppée. Les lookbehind évitent un coût quadratique.
+    private static let piiPatterns: [(trigger: UInt8, regex: NSRegularExpression)] = [
         // email
-        #"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"#,
+        (UInt8(ascii: "@"), #"(?<![A-Za-z0-9._%+\-])[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"#),
         // E.164 : « + » puis 7 à 15 chiffres, séparateurs usuels tolérés (espace, point, tiret)
-        #"\+[1-9](?:[ .\-]?[0-9]){6,14}(?![0-9])"#,
+        (UInt8(ascii: "+"), #"\+[1-9](?:[ .\-]?[0-9]){6,14}(?![0-9])"#),
         // IPv4
-        #"(?<![0-9.])(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?![0-9]|\.[0-9])"#,
-    ].compactMap { try? NSRegularExpression(pattern: $0) }
+        (
+            UInt8(ascii: "."),
+            #"(?<![0-9.])(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?![0-9]|\.[0-9])"#
+        ),
+    ].compactMap { trigger, pattern in (try? NSRegularExpression(pattern: pattern)).map { (trigger, $0) } }
 
     /// Candidats IPv6 (au moins deux « : »), confirmés ensuite par `inet_pton`.
     private static let ipv6Candidate = try? NSRegularExpression(
-        pattern: #"[0-9A-Fa-f:.]*:[0-9A-Fa-f.]*:[0-9A-Fa-f:.]*"#)
+        pattern: #"(?<![0-9A-Fa-f:.])[0-9A-Fa-f:.]*:[0-9A-Fa-f.]*:[0-9A-Fa-f:.]*"#)
 
     static func containsPII(_ value: String) -> Bool {
+        let bytes = value.utf8
         let range = NSRange(value.startIndex..., in: value)
-        if piiPatterns.contains(where: { $0.firstMatch(in: value, range: range) != nil }) {
-            return true
+        for (trigger, regex) in piiPatterns where bytes.contains(trigger) {
+            if regex.firstMatch(in: value, range: range) != nil { return true }
         }
-        guard let ipv6Candidate else { return false }
+        guard let ipv6Candidate, bytes.lazy.filter({ $0 == UInt8(ascii: ":") }).count >= 2 else { return false }
         return ipv6Candidate.matches(in: value, range: range).contains { match in
             guard let swiftRange = Range(match.range, in: value) else { return false }
             return isIPv6(String(value[swiftRange]))
