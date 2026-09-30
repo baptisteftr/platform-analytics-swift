@@ -10,9 +10,12 @@ import Foundation
 final class EventQueue {
     /// Résultat d'un `peek` : les événements lisibles et le nombre de lignes qu'ils occupent
     /// (une ligne illisible est comptée, pour être acquittée avec le reste, mais pas renvoyée).
-    struct Peek {
+    struct Peek: Sendable {
         var events: [QueuedEvent]
         var lineCount: Int
+        /// Position absolue (depuis l'ouverture) de la fin du peek : un `ack` reste juste même si la tête a
+        /// bougé entre-temps (plafond atteint, purge) pendant un envoi.
+        var end: Int
     }
 
     static let folderName = "com.platform.analytics"
@@ -25,6 +28,8 @@ final class EventQueue {
     private var handle: FileHandle?
     private var lineCount = 0
     private var deadCount = 0
+    /// Lignes retirées physiquement du fichier depuis l'ouverture (compaction, purge).
+    private var base = 0
     private var unsyncedLines = 0
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -83,7 +88,7 @@ final class EventQueue {
 
     /// Les `limit` plus anciens événements en attente, sans les retirer.
     func peek(_ limit: Int) -> Peek {
-        guard limit > 0, count > 0 else { return Peek(events: [], lineCount: 0) }
+        guard limit > 0, count > 0 else { return Peek(events: [], lineCount: 0, end: base + deadCount) }
         var events: [QueuedEvent] = []
         var consumed = 0
         let decoder = JSONDecoder()
@@ -96,13 +101,15 @@ final class EventQueue {
                 Log.warning("unreadable queue line skipped")
             }
         }
-        return Peek(events: events, lineCount: consumed)
+        return Peek(events: events, lineCount: consumed, end: base + deadCount + consumed)
     }
 
-    /// Retire les `lines` premières lignes en attente (après un envoi réussi ou un batch droppé).
-    func ack(_ lines: Int) {
-        guard lines > 0 else { return }
-        deadCount = min(lineCount, deadCount + lines)
+    /// Retire les lignes d'un `peek` (après un envoi réussi ou un batch droppé). Sans effet sur ce qui a
+    /// déjà été retiré entre-temps.
+    func ack(_ peek: Peek) {
+        let target = min(lineCount, peek.end - base)
+        guard target > deadCount else { return }
+        deadCount = target
         writeHead()
         compactIfNeeded()
     }
@@ -112,6 +119,7 @@ final class EventQueue {
         closeHandle()
         try? FileManager.default.removeItem(at: fileURL)
         try? FileManager.default.removeItem(at: headURL)
+        base += lineCount
         lineCount = 0
         deadCount = 0
         unsyncedLines = 0
@@ -189,6 +197,7 @@ final class EventQueue {
         }
         do {
             try data.write(to: fileURL, options: .atomic)
+            base += deadCount
             lineCount = live.count
             deadCount = 0
             writeHead()
