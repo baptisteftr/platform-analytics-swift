@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 #if canImport(UIKit)
     import UIKit
@@ -54,5 +55,50 @@ final class LifecycleObserver: @unchecked Sendable {
 
     deinit {
         tokens.forEach(center.removeObserver)
+    }
+}
+
+extension LifecycleObserver {
+    /// `beginBackgroundTask` (UIKit) le temps d'envoyer `$session_end` en arrière-plan (budget système ~5 s).
+    /// Sans objet sur macOS. Toujours appelé et terminé sur le main thread.
+    struct BackgroundTask: Sendable {
+        #if canImport(UIKit)
+            private let identifier = OSAllocatedUnfairLock(initialState: UIBackgroundTaskIdentifier.invalid)
+        #endif
+
+        static func begin() -> BackgroundTask {
+            let task = BackgroundTask()
+            #if canImport(UIKit)
+                onMain {
+                    let id = UIApplication.shared.beginBackgroundTask(withName: "com.platform.analytics.flush") {
+                        task.end()
+                    }
+                    task.identifier.withLock { $0 = id }
+                }
+            #endif
+            return task
+        }
+
+        func end() {
+            #if canImport(UIKit)
+                onMain {
+                    let id = identifier.withLock { current in
+                        defer { current = .invalid }
+                        return current
+                    }
+                    if id != .invalid { UIApplication.shared.endBackgroundTask(id) }
+                }
+            #endif
+        }
+
+        private static func onMain(_ work: @escaping @MainActor @Sendable () -> Void) {
+            if Thread.isMainThread {
+                MainActor.assumeIsolated(work)
+            } else {
+                Task { @MainActor in work() }
+            }
+        }
+
+        private func onMain(_ work: @escaping @MainActor @Sendable () -> Void) { Self.onMain(work) }
     }
 }
