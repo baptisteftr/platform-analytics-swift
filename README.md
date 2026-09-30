@@ -61,7 +61,7 @@ en mémoire (100 au plus) puis envoyé.
 | nom `^[a-z0-9_]{1,64}$` (`$…` réservé au SDK, sauf `$crash` pour relayer MetricKit) | événement droppé |
 | ≤ 20 props, clés `^[a-z0-9_]{1,32}$`, valeurs `String`/`Int`/`Double`/`Bool` | props en trop ou invalides droppées |
 | chaînes ≤ 256 caractères | tronquées |
-| valeur contenant un email, un numéro E.164, une IPv4 ou une IPv6 | prop droppée (« possible PII ») |
+| valeur contenant un email, un numéro E.164, une IPv4 ou une IPv6 (règles exactes : contrat 02 §3.1, cas de référence dans `docs/history/events.md`) | prop droppée (« possible PII ») |
 | props sérialisées ≤ 4 Ko | événement gardé sans props |
 
 ## Déclarations App Privacy (App Store Connect)
@@ -87,6 +87,8 @@ Aucune réponse *App Tracking Transparency* n'est nécessaire : le SDK ne tracke
   prochain lancement.
 - **Perte possible** : un événement en vol dans les ~10 ms qui suivent `track` est perdu si l'app crashe.
 - **Clé révoquée** (`401`/`403`) : la queue est purgée et le SDK se désactive jusqu'au prochain lancement.
+- **Stockage** : `Application Support/com.platform.analytics/` (sur macOS, sous `Application Support/<bundle id>/`),
+  exclu du backup ; identifiant dans le Keychain, opt-out dans `UserDefaults`.
 
 ## Développement
 

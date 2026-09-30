@@ -1,5 +1,5 @@
 # Envoi : batching, retry, opt-out
-Dernière mise à jour : 2026-09-30 (ticket #3)
+Dernière mise à jour : 2026-09-30 (ticket #5)
 
 ## Rôle
 Vide la queue vers `POST /v1/ingest/events` par batches, sans jamais perdre un événement sur une erreur
@@ -16,7 +16,9 @@ passagère ni insister contre une clé révoquée, et respecte le choix de l'uti
   `426`…) → batch droppé et on passe au suivant ; `5xx`/timeout/pas de réseau → batch conservé, backoff. (#3)
 - Backoff : délai dans `[d/2, d]`, `d = min(5 s × 2^échecs, 10 min)` ; remis à zéro par un `2xx` ou un
   retour du réseau. Un retry est programmé à l'échéance. (#3)
-- Retry : **même corps, octet pour octet, et même `Idempotency-Key`** jusqu'au `2xx` (ou jusqu'à un 4xx). (#3)
+- Retry : **même `Idempotency-Key`, mêmes événements, même `device`** jusqu'au `2xx` (ou jusqu'à un 4xx) ;
+  `sent_at` est rafraîchi à chaque tentative, le serveur l'excluant de l'empreinte d'idempotence
+  (C02 §2.6 v1.7, C05 §2.5 v1.2). (#5, remplace « même corps octet pour octet » de #3)
 - `optOut = true` : persisté dans `UserDefaults` (`com.platform.analytics.optOut`), queue purgée, envoi en
   cours ignoré, marqueur de session supprimé, `track`/`screen`/cycle de vie ignorés, aucun réseau.
   `false` : nouvelle session. `configure` en opt-out ne crée ni session ni `$crash`. (#3)
@@ -25,7 +27,8 @@ passagère ni insister contre une clé révoquée, et respecte le choix de l'uti
 - 2026-09-30 #3 — Corps du batch figé à sa création (dont `sent_at`) : C02 §1.4 répond `409` à une
   `Idempotency-Key` réutilisée avec un corps différent, ce qui droppait le batch. Conséquence : sur un
   retry, `sent_at` date de la première tentative et la correction d'horloge du serveur décale les
-  événements du délai de retry. À trancher dans le contrat.
+  événements du délai de retry. **Remplacée** le 2026-09-30 par #5 : C02 v1.7 exclut `sent_at` de
+  l'empreinte, le SDK le rafraîchit à chaque tentative (`Batch.retried(at:)`).
 - 2026-09-30 #3 — La clé d'idempotence n'est pas persistée : après un relancement, un batch dont le premier
   envoi a peut-être abouti repart avec une nouvelle clé (doublon possible, C05 §5).
 - 2026-09-30 #3 — L'envoi tourne dans une tâche de l'actor : `handle` rend la main tout de suite et les
@@ -34,6 +37,7 @@ passagère ni insister contre une clé révoquée, et respecte le choix de l'uti
   serveur (C02 §2.6) et seraient droppés en `413`.
 - 2026-09-30 #3 — `Reachability` (framework Network) et `beginBackgroundTask` (UIKit) sont exigés par C05
   §2.5 alors que C05 §0.1 ne liste que Foundation, Security, SwiftUI et les notifications UIKit/AppKit.
+  Levé par C05 v1.2 §0.1 (#5).
 
 ## Points techniques
 - Un `ack` porte une position absolue (`Peek.end`) : si la tête de la queue a bougé pendant l'envoi
@@ -48,3 +52,4 @@ passagère ni insister contre une clé révoquée, et respecte le choix de l'uti
 
 ## Tickets
 - #3 — Transport, batching, retry, opt-out — 2026-09-30
+- #5 — `sent_at` rafraîchi à chaque tentative — 2026-09-30

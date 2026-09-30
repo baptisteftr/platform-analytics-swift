@@ -1,5 +1,5 @@
 # Identité, sessions, fins anormales
-Dernière mise à jour : 2026-09-30 (ticket #2)
+Dernière mise à jour : 2026-09-30 (ticket #5)
 
 ## Rôle
 Donne à chaque appareil un identifiant anonyme stable et découpe l'usage en sessions (`$session_start`,
@@ -15,7 +15,8 @@ pas terminée proprement (`$crash`, « taux de fin anormale »).
   reset). (#2)
 - `$session_end` à chaque passage en arrière-plan, `duration_ms` = temps **cumulé au premier plan** de la
   session. Après une reprise (< 30 s), la même session émet donc un second `$session_end`, avec la durée
-  cumulée : côté serveur, la durée d'une session est celle de son **dernier** `$session_end`. (#2)
+  cumulée : côté serveur, la durée d'une session est celle de son **dernier** `$session_end` (règle
+  inscrite dans C05 v1.2 §2.2, #5). (#2)
 - Marqueur `session.active` (JSON : session, versions app/build/OS) écrit au démarrage et à la reprise,
   supprimé au passage en arrière-plan. Resté présent au lancement suivant → `$crash`
   `{signal: "unknown", top_frame: ""}` rattaché à la session interrompue, avant le nouveau `$session_start` ;
@@ -35,7 +36,9 @@ pas terminée proprement (`$crash`, « taux de fin anormale »).
 - 2026-09-30 #2 — `Batch.Device` (bloc `device` de C02 §3.1) est créé dès ce ticket : ses versions servent
   au marqueur de crash. Le reste de `Batch` arrive avec le transport (#3).
 - 2026-09-30 #2 — `deviceID` (getter synchrone) peut lire le Keychain s'il est appelé avant que l'actor ne
-  l'ait chargé : seule exception à « aucune I/O synchrone », inévitable avec un getter `String`.
+  l'ait chargé : seule exception à « aucune I/O synchrone », inévitable avec un getter `String`. Admise
+  par C05 v1.2 §0.4, comme la lecture `UserDefaults` d'`optOut` (#5).
+- 2026-09-30 #5 — La purge de la queue au reset est inscrite dans C05 v1.2 §2.7.
 
 ## Points techniques
 - L'actor garde sa propre copie de `Batch.Device` (avec l'id) : elle ne change qu'au traitement de
@@ -50,3 +53,4 @@ pas terminée proprement (`$crash`, « taux de fin anormale »).
 
 ## Tickets
 - #2 — Identité, sessions, crash, cycle de vie — 2026-09-30
+- #5 — contrat C05 v1.2 : règles ratifiées, marqueur sous `<bundle id>` sur macOS — 2026-09-30
