@@ -6,27 +6,21 @@ final class CoreTests: XCTestCase {
     private var directory: URL!
 
     override func setUp() {
-        directory = FileManager.default.temporaryDirectory
-            .appending(path: "CoreTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        directory = temporaryDirectory("CoreTests")
     }
 
     override func tearDown() {
         try? FileManager.default.removeItem(at: directory)
     }
 
-    private func makeCore() -> AnalyticsCore {
-        let directory = directory!
-        return AnalyticsCore(environment: .init(queueDirectory: { directory }, now: { Date() }))
-    }
-
-    private let endpoint = URL(filePath: "/dev/null")
+    private func makeCore() -> AnalyticsCore { AnalyticsCore.make(directory: directory) }
 
     func testEventsTrackedBeforeConfigureAreKeptUpToOneHundred() async {
         let core = makeCore()
         for index in 0..<105 {
             await core.handle(.track(name: "early", props: ["i": .int(index)], at: Date()))
         }
-        await core.handle(.configure(ingestKey: "ik_test", endpoint: endpoint, options: .init()))
+        await core.configureForTests()
         let names = await core.queuedEvents().filter { $0.name == "early" }
         XCTAssertEqual(names.count, 100)
         XCTAssertEqual(names.first?.props["i"], 0)
@@ -35,7 +29,7 @@ final class CoreTests: XCTestCase {
 
     func testInvalidEventsAreDroppedAndPropsSanitized() async {
         let core = makeCore()
-        await core.handle(.configure(ingestKey: "ik_test", endpoint: endpoint, options: .init()))
+        await core.configureForTests()
         await core.handle(.track(name: "Bad Name", props: [:], at: Date()))
         await core.handle(.track(name: "$session_start", props: [:], at: Date()))
         await core.handle(.track(name: "signup", props: ["email": "a@b.io", "plan": "pro"], at: Date()))
@@ -46,7 +40,7 @@ final class CoreTests: XCTestCase {
 
     func testScreenBecomesDollarScreenWithName() async {
         let core = makeCore()
-        await core.handle(.configure(ingestKey: "ik_test", endpoint: endpoint, options: .init()))
+        await core.configureForTests()
         await core.handle(.screen(name: "Settings", props: ["name": "ignored", "tab": "general"], at: Date()))
         await core.handle(.screen(name: "  ", props: [:], at: Date()))
         let screens = await core.queuedEvents().filter { $0.name == "$screen" }
